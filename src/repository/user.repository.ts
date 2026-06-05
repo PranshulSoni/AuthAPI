@@ -1,6 +1,6 @@
 import * as db from 'pg';
 
-export async function runMigrations(config:db.Pool){
+export async function runMigrations(config: db.Pool) {
     await config.query(`CREATE TABLE IF NOT EXISTS auth_users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(255) NOT NULL,
@@ -12,7 +12,7 @@ export async function runMigrations(config:db.Pool){
     email_verification_expires_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    `);
+    );`);
     await config.query(`CREATE TABLE IF NOT EXISTS auth_token (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
@@ -21,21 +21,46 @@ export async function runMigrations(config:db.Pool){
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`
     );
-}   
-
-export async function findUserByEmail(pool:db.Pool,email:string) {
-    const results=await pool.query(`SELECT * FROM auth_users WHERE email = $1`, [email]);
-    return results.rows[0]||null;
 }
 
-export async function createUser(pool:db.Pool,email:string,password:string,username:string,role:string){
-    const results=await pool.query(`INSERT INTO auth_users (username, email, password, role)
+export async function findUserByEmail(pool: db.Pool, email: string) {
+    const results = await pool.query(`SELECT * FROM auth_users WHERE email = $1`, [email]);
+    return results.rows[0] || null;
+}
+
+export async function createUser(pool: db.Pool, email: string, password: string, username: string, role: string) {
+    const results = await pool.query(`INSERT INTO auth_users (username, email, password, role)
     VALUES ($1, $2, $3, $4)
-    RETURNING *`,[username,email,password,role]);
+    RETURNING *`, [username, email, password, role]);
     return results.rows[0];
 }
 
-export async function deleteRefreshToken(pool:db.Pool,refreshToken:string) {
-    const results=await pool.query(`DELETE FROM auth_token WHERE refresh_token=$1`,[refreshToken]);
+export async function deleteRefreshToken(pool: db.Pool, refreshToken: string) {
+    const results = await pool.query(`DELETE FROM auth_token WHERE refresh_token=$1`, [refreshToken]);
     return results.rowCount;
+}
+
+export async function storeRefreshToken(pool: db.Pool, userId: string, refreshToken: string, expiresAt: Date) {
+    await pool.query(
+        `INSERT INTO auth_token (user_id, refresh_token, expires_at)
+        VALUES ($1, $2, $3)`,
+        [userId, refreshToken, expiresAt]
+    );
+}
+
+export async function findRefreshToken(pool: db.Pool, refreshToken: string) {
+    const result = await pool.query(`
+    SELECT 
+      auth_token.id,
+      auth_token.user_id,
+      auth_token.refresh_token,
+      auth_token.expires_at,
+      auth_users.role
+    FROM auth_token
+    JOIN auth_users 
+      ON auth_token.user_id = auth_users.id
+    WHERE auth_token.refresh_token = $1
+      AND auth_token.expires_at > NOW()
+  `, [refreshToken]);
+    return result.rows[0];
 }

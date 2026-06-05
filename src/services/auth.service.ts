@@ -1,4 +1,4 @@
-import { createUser,deleteRefreshToken,findUserByEmail } from "../repository/user.repository.js";
+import { createUser,deleteRefreshToken,findUserByEmail,findRefreshToken,storeRefreshToken } from "../repository/user.repository.js";
 import * as db from 'pg';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -15,6 +15,9 @@ export interface loginInput {
 }
 export interface LogoutInput {
   refreshToken: string
+}
+export interface RefreshInput{
+    refreshToken:string
 }
 
 export async function registerUser(pool:db.Pool, input:RegisterInput){
@@ -39,6 +42,8 @@ export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: str
         const comp=await bcrypt.compare(pass,user.password);
         if(comp){
             const tokens = generateTokens(user.id, user.role, jwtSecret, accessTokenExpiry)
+            const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            await storeRefreshToken(pool,user.id,tokens.refreshToken,expiresAt);
             return {user,tokens};
         }
         else{
@@ -55,8 +60,27 @@ export async function logoutUser(pool:db.Pool,input:LogoutInput){
     return {loggedOut:true};
 }
 
+export async function reAuthUser(pool:db.Pool,input:RefreshInput,jwtSecret:string,accessTokenExpiry:string){
+    if(input.refreshToken==null){
+        throw new Error("Refresh token is required");
+    }
+    const results=await findRefreshToken(pool,input.refreshToken);
+    if(results){
+        const accessToken=generateAccessTokens(results.user_id,results.role,jwtSecret,accessTokenExpiry);
+        return accessToken;
+    }
+    else{
+        throw new Error("Refresh Token Invalid");
+    }
+}
+
 export function generateTokens(userId: string,role: string,jwtSecret: string,accessTokenExpiry: string){
     const refreshToken=crypto.randomUUID();
     const accessToken=jwt.sign({userId,role},jwtSecret,{expiresIn:accessTokenExpiry}as jwt.SignOptions);
     return {accessToken,refreshToken};
+}
+
+export function generateAccessTokens(userId: string,role: string,jwtSecret: string,accessTokenExpiry: string){
+    const accessToken=jwt.sign({userId,role},jwtSecret,{expiresIn:accessTokenExpiry}as jwt.SignOptions);
+    return accessToken;
 }
