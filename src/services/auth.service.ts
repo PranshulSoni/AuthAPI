@@ -1,8 +1,10 @@
-import { consumeRefreshToken,createUser,deleteRefreshToken,findUserByEmail,findUserById,storeRefreshToken } from "../repository/user.repository.js";
+import { consumeRefreshToken,createUser,deleteRefreshToken,findUserByEmail,findUserById,setEmailVerificationToken,storeRefreshToken,verifyUserByEmailToken } from "../repository/user.repository.js";
 import * as db from 'pg';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { AuthConfig } from "../types/index.js";
+import { sendVerificationEmail } from "./email.service.js";
 
 export interface RegisterInput {
   email: string
@@ -21,7 +23,7 @@ export interface RefreshInput{
     refreshToken:string
 }
 
-export async function registerUser(pool:db.Pool, input:RegisterInput){
+export async function registerUser(pool:db.Pool, input:RegisterInput,emailConfig?:AuthConfig['email'],verificationBaseUrl?:string){
     const user=await findUserByEmail(pool,input.email);
     if(user){
         throw new Error("Email Already exists");
@@ -29,6 +31,14 @@ export async function registerUser(pool:db.Pool, input:RegisterInput){
     else{
         const pass=await bcrypt.hash(input.password,10);
         const newUser=await createUser(pool,input.email,pass,input.username,input.role??'user');
+        if(emailConfig!=null && verificationBaseUrl!=null){
+            const verificationToken=crypto.randomUUID();
+            const verificationTokenHash=hashToken(verificationToken);
+            const expiresAt=new Date(Date.now() + 24 * 60 * 60 * 1000);
+            await setEmailVerificationToken(pool,newUser.id,verificationTokenHash,expiresAt);
+            const verificationUrl=`${verificationBaseUrl}?token=${verificationToken}`;
+            await sendVerificationEmail(emailConfig,newUser.email,verificationUrl);
+        }
         return sanitizeUser(newUser);
     }
 }
@@ -60,7 +70,20 @@ export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: str
 }
 
 function hashRefreshToken(refreshToken:string) {
-    return crypto.createHash('sha256').update(refreshToken).digest('hex');
+    return hashToken(refreshToken);
+}
+
+function hashToken(token:string) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+export async function verifyEmail(pool:db.Pool,token:string){
+    const tokenHash=hashToken(token);
+    const user=await verifyUserByEmailToken(pool,tokenHash);
+    if(user==null){
+        throw new Error("Email verification token is invalid or expired");
+    }
+    return sanitizeUser(user);
 }
 
 export async function logoutUser(pool:db.Pool,input:LogoutInput){

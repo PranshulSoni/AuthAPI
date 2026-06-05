@@ -40,6 +40,32 @@ export async function createUser(pool: db.Pool, email: string, password: string,
     return results.rows[0];
 }
 
+export async function setEmailVerificationToken(pool: db.Pool, userId: string, tokenHash: string, expiresAt: Date) {
+    const results = await pool.query(
+        `UPDATE auth_users
+        SET email_verification_token=$1,
+            email_verification_expires_at=$2
+        WHERE id=$3
+        RETURNING *`,
+        [tokenHash, expiresAt, userId]
+    );
+    return results.rows[0] || null;
+}
+
+export async function verifyUserByEmailToken(pool: db.Pool, tokenHash: string) {
+    const results = await pool.query(
+        `UPDATE auth_users
+        SET is_verified=true,
+            email_verification_token=NULL,
+            email_verification_expires_at=NULL
+        WHERE email_verification_token=$1
+          AND email_verification_expires_at > NOW()
+        RETURNING *`,
+        [tokenHash]
+    );
+    return results.rows[0] || null;
+}
+
 export async function deleteRefreshToken(pool: db.Pool, refreshTokenHash: string) {
     const results = await pool.query(`DELETE FROM auth_token WHERE refresh_token_hash=$1`, [refreshTokenHash]);
     return results.rowCount;
