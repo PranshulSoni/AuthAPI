@@ -34,3 +34,8 @@ export async function createUser(pool:db.Pool,email:string,password:string,usern
     RETURNING *`,[username,email,password,role]);
     return results.rows[0];
 }
+
+export async function deleteRefreshToken(pool:db.Pool,refreshToken:string) {
+    const results=await pool.query(`DELETE FROM auth_token WHERE refresh_token=$1`,[refreshToken]);
+    return results.rowCount;
+}

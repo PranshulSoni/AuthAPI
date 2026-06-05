@@ -1,4 +1,4 @@
-import { createUser,findUserByEmail } from "../repository/user.repository.js";
+import { createUser,deleteRefreshToken,findUserByEmail } from "../repository/user.repository.js";
 import * as db from 'pg';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -13,7 +13,9 @@ export interface loginInput {
   email: string
   password: string
 }
-
+export interface LogoutInput {
+  refreshToken: string
+}
 
 export async function registerUser(pool:db.Pool, input:RegisterInput){
     const user=await findUserByEmail(pool,input.email);
@@ -45,6 +47,13 @@ export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: str
     }
 }
 
+export async function logoutUser(pool:db.Pool,input:LogoutInput){
+    if(input.refreshToken==null){
+        throw new Error("Refresh token is required");
+    }
+    await deleteRefreshToken(pool,input.refreshToken);
+    return {loggedOut:true};
+}
 
 export function generateTokens(userId: string,role: string,jwtSecret: string,accessTokenExpiry: string){
     const refreshToken=crypto.randomUUID();
