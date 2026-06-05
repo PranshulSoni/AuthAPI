@@ -16,7 +16,7 @@ export async function runMigrations(config: db.Pool) {
     await config.query(`CREATE TABLE IF NOT EXISTS auth_token (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        refresh_token VARCHAR(255) NOT NULL,
+        refresh_token_hash VARCHAR(255) NOT NULL,
         expires_at TIMESTAMP NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`
@@ -35,32 +35,32 @@ export async function createUser(pool: db.Pool, email: string, password: string,
     return results.rows[0];
 }
 
-export async function deleteRefreshToken(pool: db.Pool, refreshToken: string) {
-    const results = await pool.query(`DELETE FROM auth_token WHERE refresh_token=$1`, [refreshToken]);
+export async function deleteRefreshToken(pool: db.Pool, refreshTokenHash: string) {
+    const results = await pool.query(`DELETE FROM auth_token WHERE refresh_token_hash=$1`, [refreshTokenHash]);
     return results.rowCount;
 }
 
-export async function storeRefreshToken(pool: db.Pool, userId: string, refreshToken: string, expiresAt: Date) {
+export async function storeRefreshToken(pool: db.Pool, userId: string, refreshTokenHash: string, expiresAt: Date) {
     await pool.query(
-        `INSERT INTO auth_token (user_id, refresh_token, expires_at)
+        `INSERT INTO auth_token (user_id, refresh_token_hash, expires_at)
         VALUES ($1, $2, $3)`,
-        [userId, refreshToken, expiresAt]
+        [userId, refreshTokenHash, expiresAt]
     );
 }
 
-export async function findRefreshToken(pool: db.Pool, refreshToken: string) {
+export async function findRefreshToken(pool: db.Pool, refreshTokenHash: string) {
     const result = await pool.query(`
     SELECT 
       auth_token.id,
       auth_token.user_id,
-      auth_token.refresh_token,
+      auth_token.refresh_token_hash,
       auth_token.expires_at,
       auth_users.role
     FROM auth_token
     JOIN auth_users 
       ON auth_token.user_id = auth_users.id
-    WHERE auth_token.refresh_token = $1
+    WHERE auth_token.refresh_token_hash = $1
       AND auth_token.expires_at > NOW()
-  `, [refreshToken]);
+  `, [refreshTokenHash]);
     return result.rows[0];
 }

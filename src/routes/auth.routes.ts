@@ -8,7 +8,7 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
         try {
             const { email, password, username } = req.body
             if(!email || !password || !username){
-                res.status(400).send();
+                res.status(400).json({ error: "Email, password and username are required" });
                 return;
             }
             const user = await registerUser(pool, { email, password, username })
@@ -22,7 +22,7 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
         try {
             const { email, password } = req.body
             if(!email || !password){
-                res.status(400).send();
+                res.status(400).json({ error: "Email and password are required" });
                 return;
             }
             const result = await loginUser(pool, { email, password }, jwtSecret, accessTokenExpiry)
@@ -36,7 +36,7 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
         try {
             const { refreshToken } = req.body
             if(!refreshToken){
-                res.status(401).send();
+                res.status(400).json({ error: "Refresh token is required" });
                 return;
             }
             const result = await logoutUser(pool, { refreshToken })
@@ -49,7 +49,7 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
         try {
             const { refreshToken } = req.body
             if(!refreshToken){
-                res.status(401).send();
+                res.status(400).json({ error: "Refresh token is required" });
                 return;
             }
             const accessToken = await reAuthUser(pool, { refreshToken }, jwtSecret, accessTokenExpiry)

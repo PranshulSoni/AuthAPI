@@ -1,6 +1,7 @@
 import { createUser,deleteRefreshToken,findUserByEmail,findRefreshToken,storeRefreshToken } from "../repository/user.repository.js";
 import * as db from 'pg';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 
 export interface RegisterInput {
@@ -48,7 +49,8 @@ export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: str
         if(comp){
             const tokens = generateTokens(user.id, user.role, jwtSecret, accessTokenExpiry)
             const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-            await storeRefreshToken(pool,user.id,tokens.refreshToken,expiresAt);
+            const hashedRefreshToken=hashRefreshToken(tokens.refreshToken);
+            await storeRefreshToken(pool,user.id,hashedRefreshToken,expiresAt);
             return {user:sanitizeUser(user),tokens};
         }
         else{
@@ -57,11 +59,16 @@ export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: str
     }
 }
 
+function hashRefreshToken(refreshToken:string) {
+    return crypto.createHash('sha256').update(refreshToken).digest('hex');
+}
+
 export async function logoutUser(pool:db.Pool,input:LogoutInput){
     if(input.refreshToken==null){
         throw new Error("Refresh token is required");
     }
-    await deleteRefreshToken(pool,input.refreshToken);
+    const hashedRefreshToken = hashRefreshToken(input.refreshToken);
+    await deleteRefreshToken(pool,hashedRefreshToken);
     return {loggedOut:true};
 }
 
@@ -69,7 +76,8 @@ export async function reAuthUser(pool:db.Pool,input:RefreshInput,jwtSecret:strin
     if(input.refreshToken==null){
         throw new Error("Refresh token is required");
     }
-    const results=await findRefreshToken(pool,input.refreshToken);
+    const hashedRefreshToken = hashRefreshToken(input.refreshToken);
+    const results=await findRefreshToken(pool,hashedRefreshToken);
     if(results){
         const accessToken=generateAccessTokens(results.user_id,results.role,jwtSecret,accessTokenExpiry);
         return accessToken;
