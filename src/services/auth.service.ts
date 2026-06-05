@@ -1,7 +1,7 @@
 import { createUser,findUserByEmail } from "../repository/user.repository.js";
 import * as db from 'pg';
 import bcrypt from 'bcrypt';
-
+import jwt from 'jsonwebtoken';
 
 export interface RegisterInput {
   email: string
@@ -27,7 +27,7 @@ export async function registerUser(pool:db.Pool, input:RegisterInput){
     }
 }
 
-export async function loginUser(pool:db.Pool,input:loginInput) {
+export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: string, accessTokenExpiry: string) {
     const user=await findUserByEmail(pool,input.email);
     if(user==null){
         throw new Error("User does not exist");
@@ -36,10 +36,18 @@ export async function loginUser(pool:db.Pool,input:loginInput) {
         const pass=input.password;
         const comp=await bcrypt.compare(pass,user.password);
         if(comp){
-            return user;
+            const tokens = generateTokens(user.id, user.role, jwtSecret, accessTokenExpiry)
+            return {user,tokens};
         }
         else{
             throw new Error("Invalid Password");
         }
     }
+}
+
+
+export function generateTokens(userId: string,role: string,jwtSecret: string,accessTokenExpiry: string){
+    const refreshToken=crypto.randomUUID();
+    const accessToken=jwt.sign({userId,role},jwtSecret,{expiresIn:accessTokenExpiry}as jwt.SignOptions);
+    return {accessToken,refreshToken};
 }
