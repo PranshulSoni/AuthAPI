@@ -52,8 +52,8 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
                 res.status(400).json({ error: "Refresh token is required" });
                 return;
             }
-            const accessToken = await reAuthUser(pool, { refreshToken }, jwtSecret, accessTokenExpiry)
-            res.status(200).json({ accessToken })
+            const tokens = await reAuthUser(pool, { refreshToken }, jwtSecret, accessTokenExpiry)
+            res.status(200).json({ tokens })
         } catch (error: any) {
             res.status(401).json({ error: error.message })
         }

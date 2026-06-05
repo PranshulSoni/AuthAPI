@@ -1,4 +1,4 @@
-import { createUser,deleteRefreshToken,findUserByEmail,findRefreshToken,storeRefreshToken } from "../repository/user.repository.js";
+import { consumeRefreshToken,createUser,deleteRefreshToken,findUserByEmail,findUserById,storeRefreshToken } from "../repository/user.repository.js";
 import * as db from 'pg';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
@@ -77,10 +77,17 @@ export async function reAuthUser(pool:db.Pool,input:RefreshInput,jwtSecret:strin
         throw new Error("Refresh token is required");
     }
     const hashedRefreshToken = hashRefreshToken(input.refreshToken);
-    const results=await findRefreshToken(pool,hashedRefreshToken);
-    if(results){
-        const accessToken=generateAccessTokens(results.user_id,results.role,jwtSecret,accessTokenExpiry);
-        return accessToken;
+    const consumedToken=await consumeRefreshToken(pool,hashedRefreshToken);
+    if(consumedToken){
+        const user=await findUserById(pool,consumedToken.user_id);
+        if(user==null){
+            throw new Error("User does not exist");
+        }
+        const tokens=generateTokens(user.id,user.role,jwtSecret,accessTokenExpiry);
+        const expiresAt=new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        const newHashedRefreshToken=hashRefreshToken(tokens.refreshToken);
+        await storeRefreshToken(pool,user.id,newHashedRefreshToken,expiresAt);
+        return tokens;
     }
     else{
         throw new Error("Refresh Token Invalid");

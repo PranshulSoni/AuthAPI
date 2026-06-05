@@ -28,6 +28,11 @@ export async function findUserByEmail(pool: db.Pool, email: string) {
     return results.rows[0] || null;
 }
 
+export async function findUserById(pool: db.Pool, id: string) {
+    const results = await pool.query(`SELECT * FROM auth_users WHERE id = $1`, [id]);
+    return results.rows[0] || null;
+}
+
 export async function createUser(pool: db.Pool, email: string, password: string, username: string, role: string) {
     const results = await pool.query(`INSERT INTO auth_users (username, email, password, role)
     VALUES ($1, $2, $3, $4)
@@ -38,6 +43,17 @@ export async function createUser(pool: db.Pool, email: string, password: string,
 export async function deleteRefreshToken(pool: db.Pool, refreshTokenHash: string) {
     const results = await pool.query(`DELETE FROM auth_token WHERE refresh_token_hash=$1`, [refreshTokenHash]);
     return results.rowCount;
+}
+
+export async function consumeRefreshToken(pool: db.Pool, refreshTokenHash: string) {
+    const results = await pool.query(
+        `DELETE FROM auth_token
+        WHERE refresh_token_hash=$1
+          AND expires_at > NOW()
+        RETURNING user_id`,
+        [refreshTokenHash]
+    );
+    return results.rows[0] || null;
 }
 
 export async function storeRefreshToken(pool: db.Pool, userId: string, refreshTokenHash: string, expiresAt: Date) {
