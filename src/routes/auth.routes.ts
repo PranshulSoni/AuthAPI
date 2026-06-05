@@ -7,6 +7,10 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
     router.post('/register', async (req, res) => {
         try {
             const { email, password, username } = req.body
+            if(!email || !password || !username){
+                res.status(400).send();
+                return;
+            }
             const user = await registerUser(pool, { email, password, username })
             res.status(201).json({ user })
         } catch (error: any) {
@@ -17,6 +21,10 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
     router.post('/login', async (req, res) => {
         try {
             const { email, password } = req.body
+            if(!email || !password){
+                res.status(400).send();
+                return;
+            }
             const result = await loginUser(pool, { email, password }, jwtSecret, accessTokenExpiry)
             res.status(200).json(result)
         } catch (error: any) {
@@ -27,6 +35,10 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
     router.delete('/logout', async (req, res) => {
         try {
             const { refreshToken } = req.body
+            if(!refreshToken){
+                res.status(401).send();
+                return;
+            }
             const result = await logoutUser(pool, { refreshToken })
             res.status(200).json(result)
         } catch (error: any) {
@@ -36,6 +48,10 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
     router.post('/refresh', async (req, res) => {
         try {
             const { refreshToken } = req.body
+            if(!refreshToken){
+                res.status(401).send();
+                return;
+            }
             const accessToken = await reAuthUser(pool, { refreshToken }, jwtSecret, accessTokenExpiry)
             res.status(200).json({ accessToken })
         } catch (error: any) {

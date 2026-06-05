@@ -28,8 +28,13 @@ export async function registerUser(pool:db.Pool, input:RegisterInput){
     else{
         const pass=await bcrypt.hash(input.password,10);
         const newUser=await createUser(pool,input.email,pass,input.username,input.role??'user');
-        return newUser;
+        return sanitizeUser(newUser);
     }
+}
+
+function sanitizeUser(user:any){
+    const {password,...safeUser}=user;
+    return safeUser;
 }
 
 export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: string, accessTokenExpiry: string) {
@@ -44,7 +49,7 @@ export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: str
             const tokens = generateTokens(user.id, user.role, jwtSecret, accessTokenExpiry)
             const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
             await storeRefreshToken(pool,user.id,tokens.refreshToken,expiresAt);
-            return {user,tokens};
+            return {user:sanitizeUser(user),tokens};
         }
         else{
             throw new Error("Invalid Password");
