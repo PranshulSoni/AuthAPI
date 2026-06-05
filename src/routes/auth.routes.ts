@@ -1,6 +1,6 @@
 import * as db from 'pg'
 import express from 'express'
-import { loginUser, logoutUser, reAuthUser, registerUser, verifyEmail } from '../services/auth.service.js'
+import { forgotPassword, loginUser, logoutUser, reAuthUser, registerUser, resetPassword, verifyEmail } from '../services/auth.service.js'
 import { AuthConfig } from '../types/index.js';
 export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenExpiry: string,emailConfig?:AuthConfig['email']) {
     const router = express.Router();
@@ -71,6 +71,39 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             res.status(200).json({ user });
         } catch (error:any) {
             res.status(400).json({ error: error.message });
+        }
+    });
+    router.post('/forgot-password',async (req,res)=>{
+        try{
+            const {email}=req.body;
+            if(!email){
+                res.status(400).json({ error: "Email is required" });
+                return;
+            }
+            if(emailConfig == null){
+                res.status(400).json({ error: "Email provider is not configured" });
+                return;
+            }
+            const resetBaseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}/reset-password`;
+            const result =await forgotPassword(pool,{email},emailConfig,resetBaseUrl);
+            res.status(200).json(result)
+        }
+        catch(error:any){
+            res.status(400).json({ error: error.message })
+        }
+    });
+    router.post('/reset-password', async(req,res)=>{
+        try{
+            const {token,newPassword}=req.body;
+            if(!token || !newPassword){
+                res.status(400).json({ error: "Token and new password are required" });
+                return;
+            }
+            const result=await resetPassword(pool,{token,newPassword});
+            res.status(200).json(result);
+        }
+        catch(error:any){
+            res.status(400).json({error: error.message});
         }
     });
     return router;

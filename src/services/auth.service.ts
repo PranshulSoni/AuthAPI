@@ -1,10 +1,10 @@
-import { consumeRefreshToken,createUser,deleteRefreshToken,findUserByEmail,findUserById,setEmailVerificationToken,storeRefreshToken,verifyUserByEmailToken } from "../repository/user.repository.js";
+import { consumeRefreshToken,createUser,deleteAllRefreshTokens,deleteRefreshToken,findUserByEmail,findUserById,setEmailVerificationToken,setPasswordResetToken,storeRefreshToken,verifyUserByEmailToken,resetPasswordByToken } from "../repository/user.repository.js";
 import * as db from 'pg';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { AuthConfig } from "../types/index.js";
-import { sendVerificationEmail } from "./email.service.js";
+import { sendPasswordResetEmail, sendVerificationEmail } from "./email.service.js";
 
 export interface RegisterInput {
   email: string
@@ -21,6 +21,13 @@ export interface LogoutInput {
 }
 export interface RefreshInput{
     refreshToken:string
+}
+export interface ResetPasswordInput {
+    token: string
+    newPassword: string
+}
+export interface ForgotPasswordInput {
+    email: string
 }
 
 export async function registerUser(pool:db.Pool, input:RegisterInput,emailConfig?:AuthConfig['email'],verificationBaseUrl?:string){
@@ -116,6 +123,36 @@ export async function reAuthUser(pool:db.Pool,input:RefreshInput,jwtSecret:strin
         throw new Error("Refresh Token Invalid");
     }
 }
+
+export async function forgotPassword(pool:db.Pool,input:ForgotPasswordInput,emailConfig:AuthConfig['email'],resetBaseUrl:string){
+    const user=await findUserByEmail(pool,input.email);
+
+    if(user==null){
+        return { message: "If an account exists, a password reset email has been sent" }
+    }
+    const resetToken=crypto.randomUUID();
+    const resetTokenHash=hashToken(resetToken);
+    const expires_at=new Date(Date.now()+15*60*1000);
+
+    await setPasswordResetToken(pool,user.id,resetTokenHash,expires_at);
+    const resetUrl=`${resetBaseUrl}?token=${resetToken}`;
+    await sendPasswordResetEmail(emailConfig!,user.email,resetUrl);
+    return { message: "If an account exists, a password reset email has been sent" }
+}
+
+export async function resetPassword(pool:db.Pool,input:ResetPasswordInput) {
+    const tokenHash=hashToken(input.token);
+    const passwordHash = await bcrypt.hash(input.newPassword, 10)
+    
+    const user = await resetPasswordByToken(pool, tokenHash, passwordHash);
+    if(user == null){
+        throw new Error("Password reset token is invalid or expired")
+    }
+    await deleteAllRefreshTokens(pool,user.id);
+
+    return { passwordReset: true }
+}
+
 
 export function generateTokens(userId: string,role: string,jwtSecret: string,accessTokenExpiry: string){
     const refreshToken=crypto.randomUUID();

@@ -10,6 +10,8 @@ export async function runMigrations(config: db.Pool) {
     is_verified BOOLEAN NOT NULL DEFAULT false,
     email_verification_token VARCHAR(255),
     email_verification_expires_at TIMESTAMP,
+    password_reset_token VARCHAR(255),
+    password_reset_expires_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`);
@@ -52,8 +54,8 @@ export async function setEmailVerificationToken(pool: db.Pool, userId: string, t
     return results.rows[0] || null;
 }
 
-export async function verifyUserByEmailToken(pool: db.Pool, tokenHash: string) {
-    const results = await pool.query(
+export async function verifyUserByEmailToken(pool:db.Pool, tokenHash:string) {
+    const results=await pool.query(
         `UPDATE auth_users
         SET is_verified=true,
             email_verification_token=NULL,
@@ -66,8 +68,33 @@ export async function verifyUserByEmailToken(pool: db.Pool, tokenHash: string) {
     return results.rows[0] || null;
 }
 
+export async function setPasswordResetToken(pool:db.Pool,userId:string,tokenHash:string,expiresAt:Date){
+    const results=await pool.query(`UPDATE auth_users
+    SET password_reset_token = $1,
+    password_reset_expires_at = $2
+    WHERE id = $3
+    RETURNING *`,[tokenHash,expiresAt,userId]);
+    return results.rows[0]||null;
+}
+
+export async function resetPasswordByToken(pool:db.Pool,tokenHash:string,passwordHash:string) {
+    const results=await pool.query(`UPDATE auth_users
+    SET password = $1,
+        password_reset_token = NULL,
+        password_reset_expires_at = NULL
+    WHERE password_reset_token = $2
+      AND password_reset_expires_at > NOW()
+    RETURNING *`,[passwordHash,tokenHash]);
+    return results.rows[0];
+}
+
 export async function deleteRefreshToken(pool: db.Pool, refreshTokenHash: string) {
     const results = await pool.query(`DELETE FROM auth_token WHERE refresh_token_hash=$1`, [refreshTokenHash]);
+    return results.rowCount;
+}
+
+export async function deleteAllRefreshTokens(pool: db.Pool, userId: string) {
+    const results = await pool.query(`DELETE FROM auth_token WHERE user_id=$1`, [userId]);
     return results.rowCount;
 }
 
