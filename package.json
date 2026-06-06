@@ -22,7 +22,7 @@
     "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^25.9.1",
+    "@types/node": "^25.9.2",
     "@types/nodemailer": "^8.0.0",
     "@types/pg": "^8.20.0",
     "typescript": "^6.0.3"
@@ -30,8 +30,11 @@
   "dependencies": {
     "bcrypt": "^6.0.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^8.0.10",
-    "pg": "^8.21.0"
+    "pg": "^8.21.0",
+    "rate-limit-redis": "^5.0.0",
+    "redis": "^6.0.0"
   }
 }

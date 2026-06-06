@@ -1,4 +1,4 @@
-import { consumeRefreshToken,createUser,deleteAllRefreshTokens,deleteRefreshToken,findUserByEmail,findUserById,setEmailVerificationToken,setPasswordResetToken,storeRefreshToken,verifyUserByEmailToken,resetPasswordByToken } from "../repository/user.repository.js";
+import { consumeRefreshToken,createAuthAccount,createOAuthUser,createUser,deleteAllRefreshTokens,deleteRefreshToken,findUserByAuthAccount,findUserByEmail,findUserById,setEmailVerificationToken,setPasswordResetToken,storeRefreshToken,verifyUserByEmailToken,resetPasswordByToken } from "../repository/user.repository.js";
 import * as db from 'pg';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
@@ -23,14 +23,20 @@ export interface RefreshInput{
     refreshToken:string
 }
 export interface ResetPasswordInput {
-    token: string
-    newPassword: string
+    token:string
+    newPassword:string
 }
 export interface ForgotPasswordInput {
-    email: string
+    email:string
+}
+export interface OAuthLoginInput {
+    provider:string
+    providerAccountId:string
+    email:string
+    username:string
 }
 
-export async function registerUser(pool:db.Pool, input:RegisterInput,emailConfig?:AuthConfig['email'],verificationBaseUrl?:string){
+export async function registerUser(pool:db.Pool,input:RegisterInput,emailConfig?:AuthConfig['email'],verificationBaseUrl?:string){
     const user=await findUserByEmail(pool,input.email);
     if(user){
         throw new Error("Email Already exists");
@@ -55,6 +61,14 @@ function sanitizeUser(user:any){
     return safeUser;
 }
 
+export async function issueAuthTokens(pool: db.Pool, user: any, jwtSecret: string, accessTokenExpiry: string) {
+    const { accessToken, refreshToken } = generateTokens(user.id, user.role, user.is_verified, jwtSecret, accessTokenExpiry);
+    const expiresAt = new Date(Date.now()+30*24*60*60*1000);
+    const hashedRefreshToken = hashRefreshToken(refreshToken);
+    await storeRefreshToken(pool, user.id, hashedRefreshToken, expiresAt);
+    return { accessToken, refreshToken };
+}
+
 export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: string, accessTokenExpiry: string) {
     const user=await findUserByEmail(pool,input.email);
     if(user==null){
@@ -64,11 +78,8 @@ export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: str
         const pass=input.password;
         const comp=await bcrypt.compare(pass,user.password);
         if(comp){
-            const tokens = generateTokens(user.id, user.role, user.is_verified, jwtSecret, accessTokenExpiry)
-            const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-            const hashedRefreshToken=hashRefreshToken(tokens.refreshToken);
-            await storeRefreshToken(pool,user.id,hashedRefreshToken,expiresAt);
-            return {user:sanitizeUser(user),tokens};
+            const tokens = await issueAuthTokens(pool, user, jwtSecret, accessTokenExpiry);
+            return { user: sanitizeUser(user), tokens };
         }
         else{
             throw new Error("Invalid Password");
@@ -113,11 +124,7 @@ export async function reAuthUser(pool:db.Pool,input:RefreshInput,jwtSecret:strin
         if(user==null){
             throw new Error("User does not exist");
         }
-        const tokens=generateTokens(user.id,user.role,user.is_verified,jwtSecret,accessTokenExpiry);
-        const expiresAt=new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-        const newHashedRefreshToken=hashRefreshToken(tokens.refreshToken);
-        await storeRefreshToken(pool,user.id,newHashedRefreshToken,expiresAt);
-        return tokens;
+        return issueAuthTokens(pool, user, jwtSecret, accessTokenExpiry);
     }
     else{
         throw new Error("Refresh Token Invalid");
@@ -128,7 +135,7 @@ export async function forgotPassword(pool:db.Pool,input:ForgotPasswordInput,emai
     const user=await findUserByEmail(pool,input.email);
 
     if(user==null){
-        return { message: "If an account exists, a password reset email has been sent" }
+        return { message: "If an account exists then a reset password mail has been sent" }
     }
     const resetToken=crypto.randomUUID();
     const resetTokenHash=hashToken(resetToken);
@@ -137,7 +144,7 @@ export async function forgotPassword(pool:db.Pool,input:ForgotPasswordInput,emai
     await setPasswordResetToken(pool,user.id,resetTokenHash,expires_at);
     const resetUrl=`${resetBaseUrl}?token=${resetToken}`;
     await sendPasswordResetEmail(emailConfig!,user.email,resetUrl);
-    return { message: "If an account exists, a password reset email has been sent" }
+    return { message: "If an account exists then a reset password mail has been sent" }
 }
 
 export async function resetPassword(pool:db.Pool,input:ResetPasswordInput) {
@@ -163,4 +170,24 @@ export function generateTokens(userId: string,role: string,isVerified:boolean,jw
 export function generateAccessTokens(userId: string,role: string,isVerified:boolean,jwtSecret: string,accessTokenExpiry: string){
     const accessToken=jwt.sign({userId,role,isVerified},jwtSecret,{expiresIn:accessTokenExpiry}as jwt.SignOptions);
     return accessToken;
+}
+
+export async function oauthLoginUser(pool:db.Pool,input:OAuthLoginInput,jwtSecret:string,accessTokenExpiry:string) {
+    const userByAuthAccount=await findUserByAuthAccount(pool,input.provider,input.providerAccountId);
+    if(userByAuthAccount){
+        const tokens = await issueAuthTokens(pool,userByAuthAccount,jwtSecret,accessTokenExpiry);
+        return { user: sanitizeUser(userByAuthAccount), tokens };
+    }
+
+    const userByEmail=await findUserByEmail(pool,input.email);
+    if(userByEmail){
+        await createAuthAccount(pool,userByEmail.id,input.provider,input.providerAccountId,input.email);
+        const tokens = await issueAuthTokens(pool,userByEmail,jwtSecret,accessTokenExpiry);
+        return { user: sanitizeUser(userByEmail), tokens };
+    }
+
+    const newUser=await createOAuthUser(pool,input.email,input.username,'user');
+    await createAuthAccount(pool,newUser.id,input.provider,input.providerAccountId,input.email);
+    const tokens = await issueAuthTokens(pool,newUser,jwtSecret,accessTokenExpiry);
+    return { user: sanitizeUser(newUser), tokens };
 }

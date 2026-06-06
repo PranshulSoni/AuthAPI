@@ -23,6 +23,17 @@ export async function runMigrations(config: db.Pool) {
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`
     );
+    await config.query(`CREATE TABLE IF NOT EXISTS auth_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL,
+    provider_account_id VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(provider, provider_account_id)
+    );`);
+
+    await config.query(`ALTER TABLE auth_users ALTER COLUMN password DROP NOT NULL;`);
 }
 
 export async function findUserByEmail(pool: db.Pool, email: string) {
@@ -39,6 +50,55 @@ export async function createUser(pool: db.Pool, email: string, password: string,
     const results = await pool.query(`INSERT INTO auth_users (username, email, password, role)
     VALUES ($1, $2, $3, $4)
     RETURNING *`, [username, email, password, role]);
+    return results.rows[0];
+}
+
+export async function createOAuthUser(pool: db.Pool, email: string, username: string, role: string) {
+    const results = await pool.query(
+        `INSERT INTO auth_users (username, email, password, role, is_verified)
+        VALUES ($1, $2, NULL, $3, true)
+        RETURNING *`,
+        [username, email, role]
+    );
+    return results.rows[0];
+}
+
+export async function findAuthAccount(pool: db.Pool, provider: string, providerAccountId: string) {
+    const results = await pool.query(
+        `SELECT * FROM auth_accounts
+        WHERE provider = $1
+          AND provider_account_id = $2`,
+        [provider, providerAccountId]
+    );
+    return results.rows[0] || null;
+}
+
+export async function findUserByAuthAccount(pool: db.Pool, provider: string, providerAccountId: string) {
+    const results = await pool.query(
+        `SELECT auth_users.*
+        FROM auth_accounts
+        JOIN auth_users
+          ON auth_accounts.user_id = auth_users.id
+        WHERE auth_accounts.provider = $1
+          AND auth_accounts.provider_account_id = $2`,
+        [provider, providerAccountId]
+    );
+    return results.rows[0] || null;
+}
+
+export async function createAuthAccount(
+    pool: db.Pool,
+    userId: string,
+    provider: string,
+    providerAccountId: string,
+    email?: string
+) {
+    const results = await pool.query(
+        `INSERT INTO auth_accounts (user_id, provider, provider_account_id, email)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *`,
+        [userId, provider, providerAccountId, email ?? null]
+    );
     return results.rows[0];
 }
 
