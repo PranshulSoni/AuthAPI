@@ -60,5 +60,8 @@ export async function getGoogleOAuthProfile(googleConfig: GoogleOAuthConfig, cod
         throw new Error('Failed to fetch Google profile');
     }
 
+    if (profile.email_verified !== true) {
+        throw new Error('Google account email is not verified');
+    }
     return profile as GoogleOAuthProfile;
 }

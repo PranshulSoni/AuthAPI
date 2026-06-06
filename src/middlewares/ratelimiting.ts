@@ -1,11 +1,13 @@
 import { Request, Response, NextFunction } from 'express'
+import { RedisClientType } from 'redis'
+
 interface RateLimitOptions {
     prefix: string
     max: number
     windowSeconds: number
 }
 
-export function authRateLimiter(redisClient:any,options:RateLimitOptions){
+export function authRateLimiter(redisClient:RedisClientType,options:RateLimitOptions){
     return async (req: Request, res: Response, next: NextFunction) => {
         const key=`rate_limit:${options.prefix}:${req.ip}`
         const count=await redisClient.incr(key);
@@ -22,7 +24,7 @@ export function authRateLimiter(redisClient:any,options:RateLimitOptions){
 
 
 
-export function createAuthRateLimiters(redisClient:any) {
+export function createAuthRateLimiters(redisClient:RedisClientType) {
     return {
         registerLimiter: authRateLimiter(redisClient, {
             prefix:"register",

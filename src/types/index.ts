@@ -3,6 +3,10 @@ import { PoolConfig } from 'pg'
 export interface AuthConfig {
   db: PoolConfig
   jwtSecret: string
+  urls?: {
+    apiBaseUrl: string
+    frontendBaseUrl?: string
+  }
   accessTokenExpiry?: string
   refreshTokenExpiry?: string
   rateLimit?:{

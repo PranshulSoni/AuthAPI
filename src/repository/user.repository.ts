@@ -1,6 +1,8 @@
 import * as db from 'pg';
 
 export async function runMigrations(config: db.Pool) {
+    await config.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+
     await config.query(`CREATE TABLE IF NOT EXISTS auth_users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(255) NOT NULL,
@@ -181,7 +183,7 @@ export async function findRefreshToken(pool: db.Pool, refreshTokenHash: string) 
     const result = await pool.query(`
     SELECT 
       auth_token.id,
-      auth_token.user_id,c
+      auth_token.user_id,
       auth_token.refresh_token_hash,
       auth_token.expires_at,
       auth_users.role

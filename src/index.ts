@@ -19,7 +19,7 @@ export async function createAuth(config:AuthConfig){
         await redisClient.connect();
         limiter=createAuthRateLimiters(redisClient);
     }
-    const router=createAuthRouter(pool,config.jwtSecret,config.accessTokenExpiry ?? '15m',config.email,limiter,config.oauth,redisClient);
+    const router=createAuthRouter(pool,config.jwtSecret,config.accessTokenExpiry ?? '15m',config.email,limiter,config.oauth,redisClient,config.urls);
     const protect=checkUser(config.jwtSecret);
 
     return {router,protect,requireRole,requireVerifiedEmail};

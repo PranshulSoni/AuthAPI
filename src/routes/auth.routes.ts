@@ -18,6 +18,10 @@ function getErrorMessage(error: unknown) {
     return error instanceof Error ? error.message : "Something went wrong";
 }
 
+function joinUrl(baseUrl: string, path: string) {
+    return `${baseUrl.replace(/\/$/, '')}${path}`;
+}
+
 export function createAuthRouter(
     pool: db.Pool,
     jwtSecret: string,
@@ -25,7 +29,8 @@ export function createAuthRouter(
     emailConfig?: AuthConfig['email'],
     limiters?: AuthRouteLimiters,
     oauthConfig?: AuthConfig['oauth'],
-    redisClient?: RedisClientType
+    redisClient?: RedisClientType,
+    urls?: AuthConfig['urls']
 ) {
     const router = express.Router();
     router.post('/register', limiters?.registerLimiter ?? noLimiter, async (req, res) => {
@@ -35,8 +40,12 @@ export function createAuthRouter(
                 res.status(400).json({ error: "Email, password and username are required" });
                 return;
             }
-            const verificationBaseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}/verify-email`;
-            const user = await registerUser(pool, { email, password, username }, emailConfig, verificationBaseUrl)
+            if (urls == null) {
+                res.status(400).json({ error: "Public URL configuration is required for email verification" });
+                return;
+            }
+
+            const verificationBaseUrl = joinUrl(urls.apiBaseUrl, `${req.baseUrl}/verify-email`); const user = await registerUser(pool, { email, password, username }, emailConfig, verificationBaseUrl)
             res.status(201).json({ user })
         } catch (error: unknown) {
             res.status(400).json({ error: getErrorMessage(error) })
@@ -107,7 +116,13 @@ export function createAuthRouter(
                 res.status(400).json({ error: "Email provider is not configured" });
                 return;
             }
-            const resetBaseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}/reset-password`;
+            if (urls == null) {
+                res.status(400).json({ error: "Public URL configuration is required for password reset" });
+                return;
+            }
+            const resetBaseUrl = urls.frontendBaseUrl != null
+                ? joinUrl(urls.frontendBaseUrl, '/reset-password')
+                : joinUrl(urls.apiBaseUrl, `${req.baseUrl}/reset-password`);
             const result = await forgotPassword(pool, { email }, emailConfig, resetBaseUrl);
             res.status(200).json(result)
         }
