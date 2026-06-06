@@ -35,6 +35,22 @@ export interface OAuthLoginInput {
     email:string
     username:string
 }
+interface AuthUserRow {
+    id:string
+    username:string
+    email:string
+    password?:string | null
+    role:string
+    is_verified:boolean
+    [key:string]: unknown
+}
+
+type SafeUser = Omit<AuthUserRow, 'password'>
+
+export interface AuthTokens {
+    accessToken:string
+    refreshToken:string
+}
 
 export async function registerUser(pool:db.Pool,input:RegisterInput,emailConfig?:AuthConfig['email'],verificationBaseUrl?:string){
     const user=await findUserByEmail(pool,input.email);
@@ -56,12 +72,12 @@ export async function registerUser(pool:db.Pool,input:RegisterInput,emailConfig?
     }
 }
 
-function sanitizeUser(user:any){
+function sanitizeUser(user:AuthUserRow):SafeUser{
     const {password,...safeUser}=user;
     return safeUser;
 }
 
-export async function issueAuthTokens(pool: db.Pool, user: any, jwtSecret: string, accessTokenExpiry: string) {
+export async function issueAuthTokens(pool: db.Pool, user: AuthUserRow, jwtSecret: string, accessTokenExpiry: string):Promise<AuthTokens> {
     const { accessToken, refreshToken } = generateTokens(user.id, user.role, user.is_verified, jwtSecret, accessTokenExpiry);
     const expiresAt = new Date(Date.now()+30*24*60*60*1000);
     const hashedRefreshToken = hashRefreshToken(refreshToken);
@@ -76,6 +92,9 @@ export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: str
     }
     else{
         const pass=input.password;
+        if(user.password == null){
+            throw new Error("Invalid Password");
+        }
         const comp=await bcrypt.compare(pass,user.password);
         if(comp){
             const tokens = await issueAuthTokens(pool, user, jwtSecret, accessTokenExpiry);

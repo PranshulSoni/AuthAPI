@@ -1,10 +1,32 @@
 import * as db from 'pg'
-import express from 'express'
-import crypto from "crypto"
+import express, { RequestHandler } from 'express'
+import { RedisClientType } from 'redis'
 import { forgotPassword, loginUser, logoutUser, oauthLoginUser, reAuthUser, registerUser, resetPassword, verifyEmail } from '../services/auth.service.js'
+import { createGoogleOAuthUrl, createOAuthState, getGoogleOAuthProfile } from '../services/oauth.service.js'
 import { AuthConfig } from '../types/index.js';
-const noLimiter = (_req: any, _res: any, next: any) => next();
-export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenExpiry: string, emailConfig?: AuthConfig['email'], limiters?: any, oauthConfig?: AuthConfig['oauth'], redisClient?: any) {
+
+interface AuthRouteLimiters {
+    registerLimiter?: RequestHandler
+    loginLimiter?: RequestHandler
+    forgotPasswordLimiter?: RequestHandler
+    resetPasswordLimiter?: RequestHandler
+}
+
+const noLimiter: RequestHandler = (_req, _res, next) => next();
+
+function getErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : "Something went wrong";
+}
+
+export function createAuthRouter(
+    pool: db.Pool,
+    jwtSecret: string,
+    accessTokenExpiry: string,
+    emailConfig?: AuthConfig['email'],
+    limiters?: AuthRouteLimiters,
+    oauthConfig?: AuthConfig['oauth'],
+    redisClient?: RedisClientType
+) {
     const router = express.Router();
     router.post('/register', limiters?.registerLimiter ?? noLimiter, async (req, res) => {
         try {
@@ -16,8 +38,8 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             const verificationBaseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}/verify-email`;
             const user = await registerUser(pool, { email, password, username }, emailConfig, verificationBaseUrl)
             res.status(201).json({ user })
-        } catch (error: any) {
-            res.status(400).json({ error: error.message })
+        } catch (error: unknown) {
+            res.status(400).json({ error: getErrorMessage(error) })
         }
     })
 
@@ -30,8 +52,8 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             }
             const result = await loginUser(pool, { email, password }, jwtSecret, accessTokenExpiry)
             res.status(200).json(result)
-        } catch (error: any) {
-            res.status(400).json({ error: error.message })
+        } catch (error: unknown) {
+            res.status(400).json({ error: getErrorMessage(error) })
         }
     })
 
@@ -44,8 +66,8 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             }
             const result = await logoutUser(pool, { refreshToken })
             res.status(200).json(result)
-        } catch (error: any) {
-            res.status(400).json({ error: error.message })
+        } catch (error: unknown) {
+            res.status(400).json({ error: getErrorMessage(error) })
         }
     });
     router.post('/refresh', async (req, res) => {
@@ -57,8 +79,8 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             }
             const result = await reAuthUser(pool, { refreshToken }, jwtSecret, accessTokenExpiry)
             res.status(200).json(result)
-        } catch (error: any) {
-            res.status(401).json({ error: error.message })
+        } catch (error: unknown) {
+            res.status(401).json({ error: getErrorMessage(error) })
         }
     });
     router.get('/verify-email', async (req, res) => {
@@ -70,8 +92,8 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             }
             const user = await verifyEmail(pool, token);
             res.status(200).json({ user });
-        } catch (error: any) {
-            res.status(400).json({ error: error.message });
+        } catch (error: unknown) {
+            res.status(400).json({ error: getErrorMessage(error) });
         }
     });
     router.post('/forgot-password', limiters?.forgotPasswordLimiter ?? noLimiter, async (req, res) => {
@@ -89,8 +111,8 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             const result = await forgotPassword(pool, { email }, emailConfig, resetBaseUrl);
             res.status(200).json(result)
         }
-        catch (error: any) {
-            res.status(400).json({ error: error.message })
+        catch (error: unknown) {
+            res.status(400).json({ error: getErrorMessage(error) })
         }
     });
     router.post('/reset-password', limiters?.resetPasswordLimiter ?? noLimiter, async (req, res) => {
@@ -103,8 +125,8 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             const result = await resetPassword(pool, { token, newPassword });
             res.status(200).json(result);
         }
-        catch (error: any) {
-            res.status(400).json({ error: error.message });
+        catch (error: unknown) {
+            res.status(400).json({ error: getErrorMessage(error) });
         }
     });
     router.get('/oauth/google', async (req, res) => {
@@ -117,20 +139,11 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             res.status(400).json({ error: "Redis is required for OAuth state" })
             return
         }
-        const state = crypto.randomUUID();
+        const state = createOAuthState();
         await redisClient.set(`oauth_state:${state}`, "true", {
             EX: 300
         })
-        const params = new URLSearchParams({
-            client_id: googleConfig.clientId,
-            redirect_uri: googleConfig.callbackUrl,
-            response_type: 'code',
-            scope: 'openid email profile',
-            access_type: 'offline',
-            prompt: 'consent',
-            state
-        });
-        res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+        res.redirect(createGoogleOAuthUrl(googleConfig, state));
     });
     router.get('/oauth/google/callback', async (req, res) => {
         try {
@@ -159,30 +172,7 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
                 res.status(400).json({ error: "OAuth code is required" });
                 return;
             }
-            const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                    code,
-                    client_id: googleConfig.clientId,
-                    client_secret: googleConfig.clientSecret,
-                    redirect_uri: googleConfig.callbackUrl,
-                    grant_type: 'authorization_code'
-                })
-            });
-            const tokenData = await tokenResponse.json();
-            if (!tokenResponse.ok) {
-                res.status(400).json({ errorMessage: "Google OAuth token exchange failed" });
-                return;
-            }
-            const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
-                headers: { Authorization: `Bearer ${tokenData.access_token}` }
-            });
-            const profile = await profileResponse.json();
-            if (!profileResponse.ok) {
-                res.status(400).json({ error: "Failed to fetch Google profile" });
-                return;
-            }
+            const profile = await getGoogleOAuthProfile(googleConfig, code);
             const result = await oauthLoginUser(pool, {
                 provider: 'google',
                 providerAccountId: profile.sub,
@@ -191,8 +181,8 @@ export function createAuthRouter(pool: db.Pool, jwtSecret: string, accessTokenEx
             }, jwtSecret, accessTokenExpiry);
             res.status(200).json(result);
         }
-        catch (error: any) {
-            res.status(400).json({ error: error.message });
+        catch (error: unknown) {
+            res.status(400).json({ error: getErrorMessage(error) });
         }
     });
     return router;
