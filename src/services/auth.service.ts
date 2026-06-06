@@ -64,7 +64,7 @@ export async function loginUser(pool: db.Pool, input: loginInput, jwtSecret: str
         const pass=input.password;
         const comp=await bcrypt.compare(pass,user.password);
         if(comp){
-            const tokens = generateTokens(user.id, user.role, jwtSecret, accessTokenExpiry)
+            const tokens = generateTokens(user.id, user.role, user.is_verified, jwtSecret, accessTokenExpiry)
             const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
             const hashedRefreshToken=hashRefreshToken(tokens.refreshToken);
             await storeRefreshToken(pool,user.id,hashedRefreshToken,expiresAt);
@@ -113,7 +113,7 @@ export async function reAuthUser(pool:db.Pool,input:RefreshInput,jwtSecret:strin
         if(user==null){
             throw new Error("User does not exist");
         }
-        const tokens=generateTokens(user.id,user.role,jwtSecret,accessTokenExpiry);
+        const tokens=generateTokens(user.id,user.role,user.is_verified,jwtSecret,accessTokenExpiry);
         const expiresAt=new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         const newHashedRefreshToken=hashRefreshToken(tokens.refreshToken);
         await storeRefreshToken(pool,user.id,newHashedRefreshToken,expiresAt);
@@ -154,13 +154,13 @@ export async function resetPassword(pool:db.Pool,input:ResetPasswordInput) {
 }
 
 
-export function generateTokens(userId: string,role: string,jwtSecret: string,accessTokenExpiry: string){
+export function generateTokens(userId: string,role: string,isVerified:boolean,jwtSecret: string,accessTokenExpiry: string){
     const refreshToken=crypto.randomUUID();
-    const accessToken=jwt.sign({userId,role},jwtSecret,{expiresIn:accessTokenExpiry}as jwt.SignOptions);
+    const accessToken=jwt.sign({userId,role,isVerified},jwtSecret,{expiresIn:accessTokenExpiry}as jwt.SignOptions);
     return {accessToken,refreshToken};
 }
 
-export function generateAccessTokens(userId: string,role: string,jwtSecret: string,accessTokenExpiry: string){
-    const accessToken=jwt.sign({userId,role},jwtSecret,{expiresIn:accessTokenExpiry}as jwt.SignOptions);
+export function generateAccessTokens(userId: string,role: string,isVerified:boolean,jwtSecret: string,accessTokenExpiry: string){
+    const accessToken=jwt.sign({userId,role,isVerified},jwtSecret,{expiresIn:accessTokenExpiry}as jwt.SignOptions);
     return accessToken;
 }

@@ -121,7 +121,7 @@ export async function findRefreshToken(pool: db.Pool, refreshTokenHash: string) 
     const result = await pool.query(`
     SELECT 
       auth_token.id,
-      auth_token.user_id,
+      auth_token.user_id,c
       auth_token.refresh_token_hash,
       auth_token.expires_at,
       auth_users.role
