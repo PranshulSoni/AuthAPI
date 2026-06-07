@@ -1,12 +1,28 @@
 # AuthAPI
 
+[![npm version](https://img.shields.io/npm/v/@pranshul_soni/authapi.svg)](https://www.npmjs.com/package/@pranshul_soni/authapi)
+[![npm downloads](https://img.shields.io/npm/dm/@pranshul_soni/authapi.svg)](https://www.npmjs.com/package/@pranshul_soni/authapi)
+[![license](https://img.shields.io/npm/l/@pranshul_soni/authapi.svg)](https://www.npmjs.com/package/@pranshul_soni/authapi)
+
 Drop-in authentication system for Express.js backed by PostgreSQL. One function call gives you an auth router, JWT middleware, and role/email-verification guards.
 
+**Requirements:** Node.js 20+, PostgreSQL 14+, Redis 7+ (optional, used for rate limiting and OAuth state)
+
+---
+
+## Installation
+
+For an existing Express app:
+
 ```bash
-npm install @pranshul_soni/authapi
+npm i @pranshul_soni/authapi
 ```
 
-**Requirements:** Node.js 20+, PostgreSQL 14+, Redis 7+ (optional, used for rate limiting and OAuth state)
+For a new app that does not already have Express installed:
+
+```bash
+npm i express @pranshul_soni/authapi
+```
 
 ---
 
@@ -20,6 +36,11 @@ AuthAPI gives you a focused implementation with PostgreSQL persistence, token ro
 
 ## Quick start
 
+1. Create a PostgreSQL database.
+2. Set a `DATABASE_URL` and `JWT_SECRET`.
+3. Mount the router under `/auth`.
+4. Use `protect`, `requireRole`, and `requireVerifiedEmail` on your own routes.
+
 ```js
 import express from 'express';
 import { createAuth } from '@pranshul_soni/authapi';
@@ -29,11 +50,7 @@ app.use(express.json());
 
 const { router, protect, requireRole, requireVerifiedEmail } = await createAuth({
   db: {
-    host: 'localhost',
-    port: 5432,
-    user: 'postgres',
-    password: 'postgres',
-    database: 'myapp',
+    connectionString: process.env.DATABASE_URL,
   },
   jwtSecret: process.env.JWT_SECRET,
 });
@@ -44,12 +61,55 @@ app.get('/api/profile', protect, (req, res) => {
   res.json({ user: req.user });
 });
 
+app.use((err, req, res, next) => {
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({ error: status === 400 ? 'Invalid request body' : 'Internal server error' });
+});
+
 app.listen(3000);
 ```
 
 Tables (`auth_users`, `auth_token`, `auth_accounts`) are created automatically on startup by the package migration step.
 
 The database user must be allowed to create the `pgcrypto` extension, because migrations use `gen_random_uuid()` for UUID primary keys.
+
+### Minimal environment
+
+```bash
+DATABASE_URL="postgres://postgres:postgres@localhost:5432/myapp"
+JWT_SECRET="replace-with-a-long-random-secret"
+```
+
+Generate a JWT secret:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+```
+
+### Try the API
+
+Register:
+
+```bash
+curl -X POST http://localhost:3000/auth/register \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"user@example.com\",\"password\":\"MyStr0ng!Pass\",\"username\":\"johndoe\"}"
+```
+
+Login:
+
+```bash
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"user@example.com\",\"password\":\"MyStr0ng!Pass\"}"
+```
+
+Call a protected route:
+
+```bash
+curl http://localhost:3000/api/profile \
+  -H "Authorization: Bearer <accessToken>"
+```
 
 ---
 
