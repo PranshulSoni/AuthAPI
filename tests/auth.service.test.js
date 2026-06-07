@@ -102,24 +102,58 @@ test('registerUser stores a hashed password and returns a sanitized user', async
 
   const user = await registerUser(pool, {
     email: 'user@example.com',
-    password: 'password123',
+    password: 'Password123!',
     username: 'Pranshul'
   });
 
   assert.equal(user.email, 'user@example.com');
   assert.equal('password' in user, false);
-  assert.notEqual(pool.users[0].password, 'password123');
+  assert.notEqual(pool.users[0].password, 'Password123!');
+});
+
+test('registerUser normalizes email before storing the user', async () => {
+  const pool = new FakePool();
+
+  const user = await registerUser(pool, {
+    email: '  USER@Example.COM  ',
+    password: 'Password123!',
+    username: 'Pranshul'
+  });
+
+  assert.equal(user.email, 'user@example.com');
+  assert.equal(pool.users[0].email, 'user@example.com');
+});
+
+test('registerUser rejects whitespace, weak emails, short passwords, and script-like usernames', async () => {
+  const pool = new FakePool();
+
+  await assert.rejects(
+    () => registerUser(pool, { email: '   ', password: 'Password123!', username: 'Pranshul' }),
+    /Invalid Email/
+  );
+  await assert.rejects(
+    () => registerUser(pool, { email: 'h@x.com', password: 'Password123!', username: 'Pranshul' }),
+    /Invalid Email/
+  );
+  await assert.rejects(
+    () => registerUser(pool, { email: 'user@example.com', password: 'short', username: 'Pranshul' }),
+    /Password must be at least 8 characters/
+  );
+  await assert.rejects(
+    () => registerUser(pool, { email: 'user@example.com', password: 'Password123!', username: '<script>alert(1)</script>' }),
+    /Username contains invalid characters/
+  );
 });
 
 test('loginUser returns sanitized user and access/refresh tokens', async () => {
   const pool = new FakePool();
   await registerUser(pool, {
     email: 'user@example.com',
-    password: 'password123',
+    password: 'Password123!',
     username: 'Pranshul'
   });
 
-  const result = await loginUser(pool, { email: 'user@example.com', password: 'password123' }, jwtSecret, accessTokenExpiry);
+  const result = await loginUser(pool, { email: 'user@example.com', password: 'Password123!' }, jwtSecret, accessTokenExpiry);
 
   assert.equal(result.user.email, 'user@example.com');
   assert.equal('password' in result.user, false);
@@ -128,14 +162,27 @@ test('loginUser returns sanitized user and access/refresh tokens', async () => {
   assert.equal(pool.refreshTokens.length, 1);
 });
 
+test('loginUser rejects whitespace input before checking credentials', async () => {
+  const pool = new FakePool();
+
+  await assert.rejects(
+    () => loginUser(pool, { email: '   ', password: 'Password123!' }, jwtSecret, accessTokenExpiry),
+    /Invalid Email/
+  );
+  await assert.rejects(
+    () => loginUser(pool, { email: 'user@example.com', password: '   ' }, jwtSecret, accessTokenExpiry),
+    /Password is required/
+  );
+});
+
 test('reAuthUser rotates refresh tokens and rejects replay of the old token', async () => {
   const pool = new FakePool();
   await registerUser(pool, {
     email: 'user@example.com',
-    password: 'password123',
+    password: 'Password123!',
     username: 'Pranshul'
   });
-  const login = await loginUser(pool, { email: 'user@example.com', password: 'password123' }, jwtSecret, accessTokenExpiry);
+  const login = await loginUser(pool, { email: 'user@example.com', password: 'Password123!' }, jwtSecret, accessTokenExpiry);
 
   const refreshed = await reAuthUser(pool, { refreshToken: login.tokens.refreshToken }, jwtSecret, accessTokenExpiry);
 
@@ -153,7 +200,7 @@ test('oauthLoginUser links Google account to an existing email user', async () =
   const pool = new FakePool();
   const existingUser = await registerUser(pool, {
     email: 'user@example.com',
-    password: 'password123',
+    password: 'Password123!',
     username: 'Pranshul'
   });
 

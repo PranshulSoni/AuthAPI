@@ -40,12 +40,13 @@ export function createAuthRouter(
                 res.status(400).json({ error: "Email, password and username are required" });
                 return;
             }
-            if (urls == null) {
+            if (emailConfig != null && urls == null) {
                 res.status(400).json({ error: "Public URL configuration is required for email verification" });
                 return;
             }
 
-            const verificationBaseUrl = joinUrl(urls.apiBaseUrl, `${req.baseUrl}/verify-email`); const user = await registerUser(pool, { email, password, username }, emailConfig, verificationBaseUrl)
+            const verificationBaseUrl = urls == null ? undefined : joinUrl(urls.apiBaseUrl, `${req.baseUrl}/verify-email`);
+            const user = await registerUser(pool, { email, password, username }, emailConfig, verificationBaseUrl)
             res.status(201).json({ user })
         } catch (error: unknown) {
             res.status(400).json({ error: getErrorMessage(error) })
