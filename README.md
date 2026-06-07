@@ -203,8 +203,6 @@ Refresh tokens are random UUIDs. Only a SHA-256 hash of the token is stored in `
 
 ## Security
 
-The package includes automated tests for the core authentication, token, middleware, email, OAuth, and rate-limiting behavior.
-
 **Timing attack mitigation.** Login runs `bcrypt.compare()` even when the email doesn't exist in the database (against a dummy hash). This reduces timing differences between "email not found" and "wrong password".
 
 **Token hashing.** Refresh tokens and email/password reset tokens are stored as SHA-256 hashes. The raw token is never persisted. If your database is dumped, none of those tokens are usable.
@@ -232,7 +230,7 @@ The package includes automated tests for the core authentication, token, middlew
 
 ## Database schema
 
-Three tables, created by `runMigrations` on startup:
+Three tables are created automatically on startup:
 
 **auth_users** — `id` (UUID PK), `username`, `email` (unique), `password` (nullable, bcrypt hash), `role` (default `'user'`), `is_verified` (default `false`), `email_verification_token`, `email_verification_expires_at`, `password_reset_token`, `password_reset_expires_at`, `created_at`, `updated_at`
 
@@ -279,17 +277,5 @@ app.use((err, req, res, next) => {
 **Email config requires `urls`** — if `email` is set, `urls.apiBaseUrl` is required so the package can construct verification links.
 
 **Redis connection lifecycle** — AuthAPI creates a Redis client when `rateLimit.redisUrl` is configured. Keep the process long-lived, as you would with a normal Express server. If your app needs custom shutdown handling, close your HTTP server and database/Redis clients during your own process shutdown flow.
-
----
-
-## Security test coverage
-
-The current automated test suite covers 32 cases across route behavior, service behavior, middleware behavior, email sending, OAuth helpers, refresh-token rotation, and Redis-backed rate limiting.
-
-Run the suite with:
-
-```bash
-npm test
-```
 
 ---
