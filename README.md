@@ -3,7 +3,7 @@
 Drop-in authentication system for Express.js backed by PostgreSQL. One function call gives you an auth router, JWT middleware, and role/email-verification guards.
 
 ```bash
-npm install authapi
+npm install @pranshul_soni/authapi
 ```
 
 **Requirements:** Node.js 20+, PostgreSQL 14+, Redis 7+ (optional, used for rate limiting and OAuth state)
@@ -22,7 +22,7 @@ AuthAPI gives you a focused implementation with PostgreSQL persistence, token ro
 
 ```js
 import express from 'express';
-import { createAuth } from 'authapi';
+import { createAuth } from '@pranshul_soni/authapi';
 
 const app = express();
 app.use(express.json());
