@@ -182,6 +182,35 @@ Refresh tokens are random UUIDs. Only a SHA-256 hash of the token is stored in `
 
 ---
 
+## Security
+
+These aren't just documented — they're tested against 273 cases across 11 attack levels.
+
+**Timing attack prevention.** Login runs `bcrypt.compare()` even when the email doesn't exist in the database (against a dummy hash). This equalizes response time so an attacker can't distinguish "email not found" from "wrong password" by measuring latency.
+
+**Token hashing.** Refresh tokens and email/password reset tokens are stored as SHA-256 hashes. The raw token is never persisted. If your database is dumped, none of those tokens are usable.
+
+**Atomic refresh token rotation.** The `DELETE ... RETURNING` query consumes and returns a refresh token in a single atomic operation. Two concurrent requests with the same token can't both succeed — the second one gets nothing back.
+
+**Mass assignment.** `role` is hardcoded to `'user'` at the service layer regardless of what the client sends. `is_verified` and `id` are equally ignored. There's no path from user input to privilege escalation on registration.
+
+**Session invalidation on password reset.** All rows in `auth_token` for that user are deleted when a password reset succeeds. If an attacker triggered the reset or you're locking a compromised account, all active sessions die immediately.
+
+**Single-use tokens.** Both email verification and password reset tokens are NULLed in the same UPDATE that validates them. Replaying a token returns an error — the lookup finds nothing.
+
+**OAuth CSRF protection.** The `state` parameter is a UUID stored in Redis with a 5-minute TTL. The callback handler deletes the key before doing anything else. Replaying the same state after the first callback returns `400 Invalid OAuth State`.
+
+**User enumeration prevention.** Login, forgot-password, and register return generic error messages that don't distinguish between "this email exists" and "it doesn't". The response body and response time are both equalized.
+
+**Input validation.** Email is lowercased and trimmed before any comparison or storage. Usernames reject `<` and `>` to block stored XSS at the input boundary. All SQL interactions use parameterized queries — the pg driver handles escaping.
+
+**JWT algorithm enforcement.** Tokens are verified with `jwt.verify(token, secret)` — the secret string form, not a key object. The jsonwebtoken library enforces HS256. `alg:none`, `alg:None`, and RS256-with-public-key-as-HMAC attacks all fail.
+
+**No password in tokens or responses.** The `sanitizeUser` function strips the password hash before returning any user object. JWT payload contains only `userId`, `role`, and `isVerified` — nothing that helps an attacker if a token is intercepted.
+
+---
+
+
 ## Database schema
 
 Three tables, created by `runMigrations` on startup:
