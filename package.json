@@ -1,21 +1,44 @@
 {
   "name": "authapi",
   "version": "1.0.0",
-  "description": "",
+  "description": "Express authentication router with JWT, refresh tokens, PostgreSQL storage, email verification, password reset, rate limiting, and Google OAuth.",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test tests/*.test.js"
+    "test": "npm run build && node --test tests/*.test.js",
+    "prepublishOnly": "npm test && npm run typecheck"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/PranshulSoni/AuthAPI.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "auth",
+    "authentication",
+    "express",
+    "jwt",
+    "postgresql",
+    "oauth",
+    "typescript"
+  ],
+  "author": "Pranshul Soni",
   "license": "ISC",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "bugs": {
     "url": "https://github.com/PranshulSoni/AuthAPI/issues"
   },

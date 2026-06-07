@@ -1,20 +1,20 @@
 # AuthAPI
 
-Drop-in authentication system for Express.js backed by PostgreSQL. One function call gives you a full auth router, JWT middleware, and role/email-verification guards — without you writing any of it.
+Drop-in authentication system for Express.js backed by PostgreSQL. One function call gives you an auth router, JWT middleware, and role/email-verification guards.
 
 ```bash
 npm install authapi
 ```
 
-**Requirements:** Node.js 22+, PostgreSQL 14+, Redis 7+ (optional — rate limiting and OAuth only)
+**Requirements:** Node.js 20+, PostgreSQL 14+, Redis 7+ (optional, used for rate limiting and OAuth state)
 
 ---
 
 ## The problem
 
-Every backend project needs the same auth plumbing: register, login, JWT, refresh tokens, forgot password, email verification, OAuth. It gets rebuilt from scratch every time, and the security mistakes are always the same — plaintext tokens stored in the DB, different error messages for "wrong password" vs "email not found", no timing protection, mass assignment letting users set `role: "admin"` on registration.
+Every backend project needs the same auth plumbing: register, login, JWT, refresh tokens, forgot password, email verification, and OAuth. It is easy to rebuild this from scratch and accidentally introduce common security mistakes such as storing plaintext tokens, exposing different login errors for "wrong password" and "email not found", or letting users set privileged fields during registration.
 
-AuthAPI handles all of that correctly. You configure it, mount the router, use the middleware.
+AuthAPI gives you a focused implementation with PostgreSQL persistence, token rotation, email flows, Google OAuth, and middleware you can mount in an Express app.
 
 ---
 
@@ -47,7 +47,9 @@ app.get('/api/profile', protect, (req, res) => {
 app.listen(3000);
 ```
 
-Tables (`auth_users`, `auth_token`, `auth_accounts`) are created automatically on startup. No manual migration needed.
+Tables (`auth_users`, `auth_token`, `auth_accounts`) are created automatically on startup by the package migration step.
+
+The database user must be allowed to create the `pgcrypto` extension, because migrations use `gen_random_uuid()` for UUID primary keys.
 
 ---
 
@@ -68,7 +70,7 @@ await createAuth({
   },
 
   email?: {
-    provider: 'resend',
+    provider: 'resend',             // currently the only supported provider
     apiKey: string,
     from: string,                   // e.g. 'noreply@myapp.com'
   },
@@ -85,6 +87,17 @@ await createAuth({
     },
   },
 });
+```
+
+### Environment example
+
+```bash
+JWT_SECRET="replace-with-a-long-random-secret"
+DATABASE_URL="postgres://postgres:postgres@localhost:5432/myapp"
+REDIS_URL="redis://localhost:6379"
+RESEND_API_KEY="re_..."
+GOOGLE_CLIENT_ID="..."
+GOOGLE_CLIENT_SECRET="..."
 ```
 
 ---
@@ -127,7 +140,7 @@ POST /auth/login
 200 { "user": { ... }, "tokens": { "accessToken": "eyJ...", "refreshToken": "uuid" } }
 ```
 
-Returns `"Invalid email or password"` for both wrong password and non-existent email. A dummy bcrypt comparison runs for non-existent users to equalize response time — the two cases are indistinguishable from the network.
+Returns `"Invalid email or password"` for both wrong password and non-existent email. A dummy bcrypt comparison runs for non-existent users to reduce timing differences between the two paths.
 
 ### Refresh
 
@@ -172,6 +185,12 @@ app.post('/api/admin/thing', protect, requireRole('admin'), requireVerifiedEmail
 
 `protect` returns 401 if the header is missing, malformed, or the JWT is invalid/expired. `requireRole` returns 403 if the role doesn't match. `requireVerifiedEmail` returns 403 with `"Email is not verified"`.
 
+Protected requests must send the access token in the standard Bearer format:
+
+```http
+Authorization: Bearer <accessToken>
+```
+
 ---
 
 ## How tokens work
@@ -184,9 +203,9 @@ Refresh tokens are random UUIDs. Only a SHA-256 hash of the token is stored in `
 
 ## Security
 
-These aren't just documented — they're tested against 273 cases across 11 attack levels.
+The package includes automated tests for the core authentication, token, middleware, email, OAuth, and rate-limiting behavior.
 
-**Timing attack prevention.** Login runs `bcrypt.compare()` even when the email doesn't exist in the database (against a dummy hash). This equalizes response time so an attacker can't distinguish "email not found" from "wrong password" by measuring latency.
+**Timing attack mitigation.** Login runs `bcrypt.compare()` even when the email doesn't exist in the database (against a dummy hash). This reduces timing differences between "email not found" and "wrong password".
 
 **Token hashing.** Refresh tokens and email/password reset tokens are stored as SHA-256 hashes. The raw token is never persisted. If your database is dumped, none of those tokens are usable.
 
@@ -200,11 +219,11 @@ These aren't just documented — they're tested against 273 cases across 11 atta
 
 **OAuth CSRF protection.** The `state` parameter is a UUID stored in Redis with a 5-minute TTL. The callback handler deletes the key before doing anything else. Replaying the same state after the first callback returns `400 Invalid OAuth State`.
 
-**User enumeration prevention.** Login, forgot-password, and register return generic error messages that don't distinguish between "this email exists" and "it doesn't". The response body and response time are both equalized.
+**User enumeration mitigation.** Login and forgot-password use generic responses that do not reveal whether an account exists. Registration still reports duplicate emails so clients can show a useful account-exists error.
 
 **Input validation.** Email is lowercased and trimmed before any comparison or storage. Usernames reject `<` and `>` to block stored XSS at the input boundary. All SQL interactions use parameterized queries — the pg driver handles escaping.
 
-**JWT algorithm enforcement.** Tokens are verified with `jwt.verify(token, secret)` — the secret string form, not a key object. The jsonwebtoken library enforces HS256. `alg:none`, `alg:None`, and RS256-with-public-key-as-HMAC attacks all fail.
+**JWT verification.** Tokens are verified with `jwt.verify(token, secret)`. Keep `jwtSecret` private and rotate it carefully because existing access tokens depend on it.
 
 **No password in tokens or responses.** The `sanitizeUser` function strips the password hash before returning any user object. JWT payload contains only `userId`, `role`, and `isVerified` — nothing that helps an attacker if a token is intercepted.
 
@@ -253,22 +272,24 @@ app.use((err, req, res, next) => {
 });
 ```
 
-**HTTPS** — access tokens travel in `Authorization` headers. TLS is not optional.
+**HTTPS** — access tokens travel in `Authorization` headers. Use TLS in production.
 
 **OAuth requires Redis** — the CSRF state parameter needs somewhere to live. If you configure `oauth.google`, you must also set `rateLimit.redisUrl`.
 
 **Email config requires `urls`** — if `email` is set, `urls.apiBaseUrl` is required so the package can construct verification links.
 
+**Redis connection lifecycle** — AuthAPI creates a Redis client when `rateLimit.redisUrl` is configured. Keep the process long-lived, as you would with a normal Express server. If your app needs custom shutdown handling, close your HTTP server and database/Redis clients during your own process shutdown flow.
+
 ---
 
 ## Security test coverage
 
-Tested against 273 cases across 11 levels: input validation, auth flows, JWT attacks (alg:none, key confusion, tampered payload), session management, password security, rate limiting, SQL injection, XSS, command injection, path traversal, prototype pollution, IDOR, authorization bypass, OAuth CSRF, account enumeration timing, credential stuffing, race conditions, HTTP verb tampering, large payload DoS.
+The current automated test suite covers 32 cases across route behavior, service behavior, middleware behavior, email sending, OAuth helpers, refresh-token rotation, and Redis-backed rate limiting.
 
-All 273 pass.
+Run the suite with:
+
+```bash
+npm test
+```
 
 ---
-
-## License
-
-ISC
