@@ -1,6 +1,6 @@
 {
   "name": "@pranshul_soni/authapi",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Express authentication router with JWT, refresh tokens, PostgreSQL storage, email verification, password reset, rate limiting, and Google OAuth.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
