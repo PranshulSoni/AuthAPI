@@ -5,6 +5,7 @@ export interface AuthPayload extends JwtPayload {
     userId: string
     role: string
     isVerified: boolean
+    tenantId?: string
 }
 
 export interface AuthenticatedRequest extends Request {

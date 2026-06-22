@@ -56,12 +56,12 @@ export function createAuthRouter(
 
     router.post('/login', limiters?.loginLimiter ?? noLimiter, async (req, res) => {
         try {
-            const { email, password } = req.body
+            const { email, password, tenantId } = req.body
             if (!email || !password) {
                 res.status(400).json({ error: "Email and password are required" });
                 return;
             }
-            const result = await loginUser(repo, pool, { email, password }, jwtSecret, accessTokenExpiry)
+            const result = await loginUser(repo, pool, { email, password, tenantId }, jwtSecret, accessTokenExpiry)
             res.status(200).json(result)
         } catch (error: unknown) {
             res.status(400).json({ error: getErrorMessage(error) })

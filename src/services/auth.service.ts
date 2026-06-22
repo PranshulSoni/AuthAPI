@@ -14,6 +14,7 @@ export interface RegisterInput {
 export interface loginInput {
     email: string
     password: string
+    tenantId?: string
 }
 export interface LogoutInput {
     refreshToken: string
@@ -136,8 +137,8 @@ function hashToken(token: string) {
     return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-export async function issueAuthTokens(pool: db.Pool, user: { id: string; role: string; is_verified: boolean }, jwtSecret: string, accessTokenExpiry: string): Promise<AuthTokens> {
-    const { accessToken, refreshToken } = generateTokens(user.id, user.role, user.is_verified, jwtSecret, accessTokenExpiry);
+export async function issueAuthTokens(pool: db.Pool, user: { id: string; role: string; is_verified: boolean }, jwtSecret: string, accessTokenExpiry: string, tenantId?: string): Promise<AuthTokens> {
+    const { accessToken, refreshToken } = generateTokens(user.id, user.role, user.is_verified, jwtSecret, accessTokenExpiry, tenantId);
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const hashedRefreshToken = hashRefreshToken(refreshToken);
     await storeRefreshToken(pool, user.id, hashedRefreshToken, expiresAt);
@@ -160,7 +161,7 @@ export async function loginUser(repo: UserRepo, pool: db.Pool, input: loginInput
     if (!comp) {
         throw new Error(INVALID_LOGIN_MESSAGE);
     }
-    const tokens = await issueAuthTokens(pool, user, jwtSecret, accessTokenExpiry);
+    const tokens = await issueAuthTokens(pool, user, jwtSecret, accessTokenExpiry, input.tenantId);
     return { user: sanitizeUser(user as unknown as Record<string, unknown>), tokens };
 }
 
@@ -248,9 +249,10 @@ export async function oauthLoginUser(repo: UserRepo, pool: db.Pool, input: OAuth
     return { user: sanitizeUser(newUser as unknown as Record<string, unknown>), tokens };
 }
 
-export function generateTokens(userId: string, role: string, isVerified: boolean, jwtSecret: string, accessTokenExpiry: string) {
+export function generateTokens(userId: string, role: string, isVerified: boolean, jwtSecret: string, accessTokenExpiry: string, tenantId?: string) {
     const refreshToken = crypto.randomUUID();
-    const accessToken = jwt.sign({ userId, role, isVerified }, jwtSecret, { expiresIn: accessTokenExpiry } as jwt.SignOptions);
+    const payload = tenantId ? { userId, role, isVerified, tenantId } : { userId, role, isVerified };
+    const accessToken = jwt.sign(payload, jwtSecret, { expiresIn: accessTokenExpiry } as jwt.SignOptions);
     return { accessToken, refreshToken };
 }
 
