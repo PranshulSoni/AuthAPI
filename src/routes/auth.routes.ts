@@ -25,7 +25,7 @@ function joinUrl(baseUrl: string, path: string) {
 export function createAuthRouter(
     repo: UserRepo,
     pool: db.Pool,
-    jwtSecret: string,
+    jwtSecret: string | (() => string),
     accessTokenExpiry: string,
     emailConfig?: AuthConfig['email'],
     limiters?: AuthRouteLimiters,

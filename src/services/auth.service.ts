@@ -41,6 +41,10 @@ export interface AuthTokens {
 }
 
 const INVALID_LOGIN_MESSAGE = "Invalid email or password";
+
+function resolveSecret(jwtSecret: string | (() => string)): string {
+    return typeof jwtSecret === "function" ? jwtSecret() : jwtSecret
+}
 const dummyHash = "$2b$10$7EqJtq98hPqEX7fNZaFWoOHi8YDxw7FqaifQqE7UD5N4rQUmyXh5O";
 
 function normalizeEmail(email: string) {
@@ -137,7 +141,7 @@ function hashToken(token: string) {
     return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-export async function issueAuthTokens(pool: db.Pool, user: { id: string; role: string; is_verified: boolean }, jwtSecret: string, accessTokenExpiry: string, tenantId?: string): Promise<AuthTokens> {
+export async function issueAuthTokens(pool: db.Pool, user: { id: string; role: string; is_verified: boolean }, jwtSecret: string | (() => string), accessTokenExpiry: string, tenantId?: string): Promise<AuthTokens> {
     const { accessToken, refreshToken } = generateTokens(user.id, user.role, user.is_verified, jwtSecret, accessTokenExpiry, tenantId);
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const hashedRefreshToken = hashRefreshToken(refreshToken);
@@ -145,7 +149,7 @@ export async function issueAuthTokens(pool: db.Pool, user: { id: string; role: s
     return { accessToken, refreshToken };
 }
 
-export async function loginUser(repo: UserRepo, pool: db.Pool, input: loginInput, jwtSecret: string, accessTokenExpiry: string) {
+export async function loginUser(repo: UserRepo, pool: db.Pool, input: loginInput, jwtSecret: string | (() => string), accessTokenExpiry: string) {
     const email = normalizeEmail(input.email);
     const pass = validateLoginPassword(input.password);
     const user = await repo.findByEmail(email);
@@ -181,7 +185,7 @@ export async function logoutUser(pool: db.Pool, input: LogoutInput) {
     return { loggedOut: true };
 }
 
-export async function reAuthUser(repo: UserRepo, pool: db.Pool, input: RefreshInput, jwtSecret: string, accessTokenExpiry: string) {
+export async function reAuthUser(repo: UserRepo, pool: db.Pool, input: RefreshInput, jwtSecret: string | (() => string), accessTokenExpiry: string) {
     const refreshToken = validateRequiredToken(input.refreshToken, "Refresh token is required");
     const hashedRefreshToken = hashRefreshToken(refreshToken);
     const consumedToken = await consumeRefreshToken(pool, hashedRefreshToken);
@@ -221,7 +225,7 @@ export async function resetPassword(repo: UserRepo, pool: db.Pool, input: ResetP
     return { passwordReset: true }
 }
 
-export async function oauthLoginUser(repo: UserRepo, pool: db.Pool, input: OAuthLoginInput, jwtSecret: string, accessTokenExpiry: string) {
+export async function oauthLoginUser(repo: UserRepo, pool: db.Pool, input: OAuthLoginInput, jwtSecret: string | (() => string), accessTokenExpiry: string) {
     const provider = validateRequiredToken(input.provider, "OAuth provider is required").trim().toLowerCase();
     const providerAccountId = validateRequiredToken(input.providerAccountId, "OAuth provider account id is required").trim();
     const email = normalizeEmail(input.email);
@@ -249,14 +253,14 @@ export async function oauthLoginUser(repo: UserRepo, pool: db.Pool, input: OAuth
     return { user: sanitizeUser(newUser as unknown as Record<string, unknown>), tokens };
 }
 
-export function generateTokens(userId: string, role: string, isVerified: boolean, jwtSecret: string, accessTokenExpiry: string, tenantId?: string) {
+export function generateTokens(userId: string, role: string, isVerified: boolean, jwtSecret: string | (() => string), accessTokenExpiry: string, tenantId?: string) {
     const refreshToken = crypto.randomUUID();
     const payload = tenantId ? { userId, role, isVerified, tenantId } : { userId, role, isVerified };
-    const accessToken = jwt.sign(payload, jwtSecret, { expiresIn: accessTokenExpiry } as jwt.SignOptions);
+    const accessToken = jwt.sign(payload, resolveSecret(jwtSecret), { expiresIn: accessTokenExpiry } as jwt.SignOptions);
     return { accessToken, refreshToken };
 }
 
-export function generateAccessTokens(userId: string, role: string, isVerified: boolean, jwtSecret: string, accessTokenExpiry: string) {
-    const accessToken = jwt.sign({ userId, role, isVerified }, jwtSecret, { expiresIn: accessTokenExpiry } as jwt.SignOptions);
+export function generateAccessTokens(userId: string, role: string, isVerified: boolean, jwtSecret: string | (() => string), accessTokenExpiry: string) {
+    const accessToken = jwt.sign({ userId, role, isVerified }, resolveSecret(jwtSecret), { expiresIn: accessTokenExpiry } as jwt.SignOptions);
     return accessToken;
 }

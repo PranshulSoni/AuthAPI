@@ -38,7 +38,7 @@ export interface UserRepo {
 
 export interface AuthConfig {
     db: PoolConfig
-    jwtSecret: string
+    jwtSecret: string | (() => string)
     userTable?: UserTableConfig
     urls?: {
         apiBaseUrl: string
