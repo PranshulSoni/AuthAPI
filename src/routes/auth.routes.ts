@@ -3,7 +3,7 @@ import express, { RequestHandler } from 'express'
 import { RedisClientType } from 'redis'
 import { forgotPassword, loginUser, logoutUser, oauthLoginUser, reAuthUser, registerUser, resetPassword, verifyEmail } from '../services/auth.service.js'
 import { createGoogleOAuthUrl, createOAuthState, getGoogleOAuthProfile } from '../services/oauth.service.js'
-import { AuthConfig } from '../types/index.js';
+import type { AuthConfig, UserRepo } from '../types/index.js';
 
 interface AuthRouteLimiters {
     registerLimiter?: RequestHandler
@@ -23,6 +23,7 @@ function joinUrl(baseUrl: string, path: string) {
 }
 
 export function createAuthRouter(
+    repo: UserRepo,
     pool: db.Pool,
     jwtSecret: string,
     accessTokenExpiry: string,
@@ -33,6 +34,7 @@ export function createAuthRouter(
     urls?: AuthConfig['urls']
 ) {
     const router = express.Router();
+
     router.post('/register', limiters?.registerLimiter ?? noLimiter, async (req, res) => {
         try {
             const { email, password, username } = req.body
@@ -44,9 +46,8 @@ export function createAuthRouter(
                 res.status(400).json({ error: "Public URL configuration is required for email verification" });
                 return;
             }
-
             const verificationBaseUrl = urls == null ? undefined : joinUrl(urls.apiBaseUrl, `${req.baseUrl}/verify-email`);
-            const user = await registerUser(pool, { email, password, username }, emailConfig, verificationBaseUrl)
+            const user = await registerUser(repo, { email, password, username }, emailConfig, verificationBaseUrl)
             res.status(201).json({ user })
         } catch (error: unknown) {
             res.status(400).json({ error: getErrorMessage(error) })
@@ -60,7 +61,7 @@ export function createAuthRouter(
                 res.status(400).json({ error: "Email and password are required" });
                 return;
             }
-            const result = await loginUser(pool, { email, password }, jwtSecret, accessTokenExpiry)
+            const result = await loginUser(repo, pool, { email, password }, jwtSecret, accessTokenExpiry)
             res.status(200).json(result)
         } catch (error: unknown) {
             res.status(400).json({ error: getErrorMessage(error) })
@@ -80,6 +81,7 @@ export function createAuthRouter(
             res.status(400).json({ error: getErrorMessage(error) })
         }
     });
+
     router.post('/refresh', async (req, res) => {
         try {
             const { refreshToken } = req.body
@@ -87,12 +89,13 @@ export function createAuthRouter(
                 res.status(400).json({ error: "Refresh token is required" });
                 return;
             }
-            const result = await reAuthUser(pool, { refreshToken }, jwtSecret, accessTokenExpiry)
+            const result = await reAuthUser(repo, pool, { refreshToken }, jwtSecret, accessTokenExpiry)
             res.status(200).json(result)
         } catch (error: unknown) {
             res.status(401).json({ error: getErrorMessage(error) })
         }
     });
+
     router.get('/verify-email', async (req, res) => {
         try {
             const token = req.query.token;
@@ -100,12 +103,13 @@ export function createAuthRouter(
                 res.status(400).json({ error: "Verification failed" });
                 return;
             }
-            const user = await verifyEmail(pool, token);
+            const user = await verifyEmail(repo, token);
             res.status(200).json({ user });
         } catch (error: unknown) {
             res.status(400).json({ error: getErrorMessage(error) });
         }
     });
+
     router.post('/forgot-password', limiters?.forgotPasswordLimiter ?? noLimiter, async (req, res) => {
         try {
             const { email } = req.body;
@@ -124,13 +128,13 @@ export function createAuthRouter(
             const resetBaseUrl = urls.frontendBaseUrl != null
                 ? joinUrl(urls.frontendBaseUrl, '/reset-password')
                 : joinUrl(urls.apiBaseUrl, `${req.baseUrl}/reset-password`);
-            const result = await forgotPassword(pool, { email }, emailConfig, resetBaseUrl);
+            const result = await forgotPassword(repo, { email }, emailConfig, resetBaseUrl);
             res.status(200).json(result)
-        }
-        catch (error: unknown) {
+        } catch (error: unknown) {
             res.status(400).json({ error: getErrorMessage(error) })
         }
     });
+
     router.post('/reset-password', limiters?.resetPasswordLimiter ?? noLimiter, async (req, res) => {
         try {
             const { token, newPassword } = req.body;
@@ -138,13 +142,13 @@ export function createAuthRouter(
                 res.status(400).json({ error: "Token and new password are required" });
                 return;
             }
-            const result = await resetPassword(pool, { token, newPassword });
+            const result = await resetPassword(repo, pool, { token, newPassword });
             res.status(200).json(result);
-        }
-        catch (error: unknown) {
+        } catch (error: unknown) {
             res.status(400).json({ error: getErrorMessage(error) });
         }
     });
+
     router.get('/oauth/google', async (req, res) => {
         const googleConfig = oauthConfig?.google;
         if (googleConfig == null) {
@@ -156,11 +160,10 @@ export function createAuthRouter(
             return
         }
         const state = createOAuthState();
-        await redisClient.set(`oauth_state:${state}`, "true", {
-            EX: 300
-        })
+        await redisClient.set(`oauth_state:${state}`, "true", { EX: 300 })
         res.redirect(createGoogleOAuthUrl(googleConfig, state));
     });
+
     router.get('/oauth/google/callback', async (req, res) => {
         try {
             if (redisClient == null) {
@@ -189,17 +192,17 @@ export function createAuthRouter(
                 return;
             }
             const profile = await getGoogleOAuthProfile(googleConfig, code);
-            const result = await oauthLoginUser(pool, {
+            const result = await oauthLoginUser(repo, pool, {
                 provider: 'google',
                 providerAccountId: profile.sub,
                 email: profile.email,
                 username: profile.name ?? profile.email
             }, jwtSecret, accessTokenExpiry);
             res.status(200).json(result);
-        }
-        catch (error: unknown) {
+        } catch (error: unknown) {
             res.status(400).json({ error: getErrorMessage(error) });
         }
     });
+
     return router;
 }
